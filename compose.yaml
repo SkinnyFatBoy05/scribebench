@@ -1,0 +1,69 @@
+name: scribebench
+
+services:
+  api:
+    build: ./api
+    environment:
+      SCRIBE_API_KEY: ${SCRIBE_API_KEY:-}
+      SCRIBE_DB_PATH: /data/scribebench.db
+      SCRIBE_MODEL_PROVIDER: ${SCRIBE_MODEL_PROVIDER:-rule-based}
+      SCRIBE_MODEL_VERSION: ${SCRIBE_MODEL_VERSION:-rule-based-baseline-v1}
+      SCRIBE_MODEL_BASE_URL: ${SCRIBE_MODEL_BASE_URL:-http://model:8000}
+      SCRIBE_MODEL_NAME: ${SCRIBE_MODEL_NAME:-Qwen/Qwen2.5-7B-Instruct}
+      SCRIBE_MODEL_TIMEOUT_SECONDS: ${SCRIBE_MODEL_TIMEOUT_SECONDS:-60}
+      SCRIBE_QUEUE_CAPACITY: ${SCRIBE_QUEUE_CAPACITY:-32}
+      SCRIBE_MAX_RETRIES: ${SCRIBE_MAX_RETRIES:-2}
+      SCRIBE_WORKERS: ${SCRIBE_WORKERS:-1}
+      SCRIBE_SEED_DEMO: ${SCRIBE_SEED_DEMO:-true}
+    volumes:
+      - scribebench-data:/data
+    ports:
+      - "127.0.0.1:8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health')"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ./web
+    environment:
+      SCRIBE_API_KEY: ${SCRIBE_API_KEY:-}
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:4173:80"
+    restart: unless-stopped
+
+  model:
+    profiles: ["gpu"]
+    image: ${VLLM_IMAGE:-vllm/vllm-openai:v0.8.5}
+    command:
+      - --model
+      - ${SCRIBE_MODEL_NAME:-Qwen/Qwen2.5-7B-Instruct}
+      - --served-model-name
+      - ${SCRIBE_MODEL_NAME:-Qwen/Qwen2.5-7B-Instruct}
+      - --max-model-len
+      - "8192"
+      - --generation-config
+      - vllm
+    environment:
+      HF_HOME: /models/cache
+    volumes:
+      - model-cache:/models/cache
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    ipc: host
+    restart: unless-stopped
+
+volumes:
+  scribebench-data:
+  model-cache:

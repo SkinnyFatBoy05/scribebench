@@ -1,0 +1,54 @@
+{
+  "generated_at": "2026-09-24T09:20:23.149267+00:00",
+  "system": "rule-based-baseline-v1",
+  "scope": "engineering evaluation on held-out synthetic scenario families",
+  "held_out_cases": 3,
+  "metrics": {
+    "structured_validity_rate": 1.0,
+    "evidence_grounding_rate": 1.0,
+    "required_term_recall_rate": 1.0,
+    "contradiction_accuracy": 1.0,
+    "warning_accuracy": 1.0,
+    "forbidden_reason_term_absence_rate": 1.0
+  },
+  "cases": [
+    {
+      "case_id": "syn-injection-005",
+      "scenario_family": "adversarial-content",
+      "structured_valid": true,
+      "evidence_grounded": true,
+      "required_terms_present": true,
+      "contradiction_correct": true,
+      "warning_correct": true,
+      "forbidden_reason_terms_absent": true,
+      "transcript_lines": 7
+    },
+    {
+      "case_id": "syn-observation-006",
+      "scenario_family": "observed-vitals",
+      "structured_valid": true,
+      "evidence_grounded": true,
+      "required_terms_present": true,
+      "contradiction_correct": true,
+      "warning_correct": true,
+      "forbidden_reason_terms_absent": true,
+      "transcript_lines": 7
+    },
+    {
+      "case_id": "syn-contradiction-007",
+      "scenario_family": "correction-and-retraction",
+      "structured_valid": true,
+      "evidence_grounded": true,
+      "required_terms_present": true,
+      "contradiction_correct": true,
+      "warning_correct": true,
+      "forbidden_reason_terms_absent": true,
+      "transcript_lines": 10
+    }
+  ],
+  "comparisons": {
+    "qwen_base": "not_run",
+    "qwen_lora": "not_run",
+    "hosted": "not_run"
+  }
+}
