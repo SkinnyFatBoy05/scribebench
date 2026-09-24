@@ -10,6 +10,12 @@ The image is a generated design reference. The implementation is code-native and
 
 ## What works now
 
+Build-only pilot preparation is available in **Pilot & operations**: authorisation gates, per-participant
+credentials, library-only synthetic inputs, usage/feedback records and service status. The pilot is
+inactive by default. See [deployment, recovery, monitoring and pilot runbook](docs/pilot-operations.md).
+No deployment, invitations or human pilot feedback are claimed. The review UI has been refined for
+readable text, larger controls and responsive layouts using the original visual direction.
+
 - Durable, idempotent FastAPI jobs stored in SQLite/WAL.
 - Bounded queue, timeouts, retries, restart recovery, model versioning, and rollback-by-configuration.
 - Real local Ollama inference (Qwen3 4B by default), selectable operator-owned model connections, and OpenAI-compatible APIs/gateways. The rule-based provider is only an explicit test baseline.

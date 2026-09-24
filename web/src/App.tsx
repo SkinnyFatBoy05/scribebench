@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import './App.css'
-import { api, type ModelConnection } from './api'
+import './refinement.css'
+import { PilotView } from './components/PilotView'
+import { api, type ModelConnection, type PilotStatus } from './api'
 import { AuthGate } from './components/AuthGate'
 import { JobProgress } from './components/JobProgress'
 import { NotePanel } from './components/NotePanel'
@@ -12,14 +14,14 @@ import type { Draft, Job, SyntheticCase, ViewName } from './types'
 
 const inProgress = new Set(['queued', 'running', 'retrying'])
 
-function Header({ onNew }: { onNew: () => void }) {
+function Header({ onNew, pilotActive }: { onNew: () => void; pilotActive: boolean }) {
   return (
     <header className="topbar">
       <div>
         <span className="scope-label">Synthetic cases only</span>
-        <span className="boundary-label">Portfolio deployment</span>
+        <span className="boundary-label">Evidence-linked review workspace</span>
       </div>
-      <button type="button" className="primary small" onClick={onNew}>New transcript</button>
+      <button type="button" className="primary small" onClick={onNew}>{pilotActive ? 'Choose synthetic case' : 'New transcript'}</button>
     </header>
   )
 }
@@ -39,10 +41,12 @@ function ReviewWorkspace({
   job,
   onJobChange,
   onDeleted,
+  canDelete,
 }: {
   job: Job
   onJobChange: (job: Job) => void
   onDeleted: (id: string) => void
+  canDelete: boolean
 }) {
   const [draft, setDraft] = useState<Draft | null>(job.draft)
   const [dirty, setDirty] = useState(false)
@@ -152,7 +156,7 @@ function ReviewWorkspace({
           <span>{message || (job.status === 'approved' ? `Approved ${formatTime(job.approved_at!)}` : dirty ? 'Unsaved changes' : 'Draft version is saved')}</span>
         </div>
         <div className="action-buttons">
-          <button type="button" className="icon-button danger" title="Delete synthetic case" onClick={remove} disabled={busy}><TrashIcon /></button>
+          {canDelete && <button type="button" className="icon-button danger" title="Delete synthetic case" onClick={remove} disabled={busy}><TrashIcon /></button>}
           {editable && <button type="button" className="secondary" onClick={save} disabled={busy || !dirty}>Save edits</button>}
           <a className={`secondary export-link ${job.status !== 'approved' ? 'disabled' : ''}`} href={job.status === 'approved' ? api.exportUrl(job.id) : undefined} download>
             <ExportIcon /> Export JSON
@@ -164,7 +168,7 @@ function ReviewWorkspace({
   )
 }
 
-function JobsView({ jobs, onOpen, onDelete }: { jobs: Job[]; onOpen: (job: Job) => void; onDelete: (job: Job) => void }) {
+function JobsView({ jobs, onOpen, onDelete, canDelete }: { jobs: Job[]; onOpen: (job: Job) => void; onDelete: (job: Job) => void; canDelete: boolean }) {
   return (
     <main className="list-view">
       <div className="page-heading"><div><h1>Jobs</h1><p>Durable processing history for synthetic transcripts.</p></div><span>{jobs.length} total</span></div>
@@ -176,7 +180,7 @@ function JobsView({ jobs, onOpen, onDelete }: { jobs: Job[]; onOpen: (job: Job) 
             <span><i className={`status-chip ${job.status}`}>{humanStatus(job.status)}</i></span>
             <span className="mono-cell">{job.model_version}</span>
             <span>{formatTime(job.updated_at)}</span>
-            <span className="row-actions"><button type="button" onClick={() => onOpen(job)}>Open review</button><button type="button" className="danger-text" onClick={() => onDelete(job)}>Delete</button></span>
+            <span className="row-actions"><button type="button" onClick={() => onOpen(job)}>Open review</button>{canDelete && <button type="button" className="danger-text" onClick={() => onDelete(job)}>Delete</button>}</span>
           </div>
         ))}
       </div>
@@ -252,6 +256,8 @@ function NewTranscriptDialog({ onClose, onSubmit, busy }: { onClose: () => void;
 }
 
 function App() {
+  const [pilotStatus, setPilotStatus] = useState<PilotStatus | null>(null)
+  const canDelete = pilotStatus ? ['operator', 'local'].includes(pilotStatus.actor) : false
   const [models, setModels] = useState<ModelConnection[]>([])
   const [modelId, setModelId] = useState('default')
   const [view, setView] = useState<ViewName>('review')
@@ -265,8 +271,9 @@ function App() {
   const selected = useMemo(() => jobs.find((job) => job.id === selectedId) ?? null, [jobs, selectedId])
 
   useEffect(() => {
-    Promise.all([api.listJobs(), api.listCases(), api.models()])
-      .then(([loadedJobs, loadedCases, loadedModels]) => {
+    Promise.all([api.listJobs(), api.listCases(), api.models(), api.pilot()])
+      .then(([loadedJobs, loadedCases, loadedModels, loadedPilot]) => {
+        setPilotStatus(loadedPilot)
         setModels(loadedModels)
         setJobs(loadedJobs)
         setCases(loadedCases)
@@ -328,16 +335,17 @@ function App() {
     <div className="app-shell">
       <Sidebar view={view} onChange={setView} />
       <div className="app-main">
-        <Header onNew={() => setDialogOpen(true)} />
+        <Header pilotActive={pilotStatus?.status === 'active'} onNew={() => pilotStatus?.status === 'active' ? setView('cases') : setDialogOpen(true)} />
         <div className="model-bar"><label htmlFor="model-select">Model for new jobs</label><select id="model-select" value={modelId} onChange={e => setModelId(e.target.value)}>{models.map(model => <option key={model.id} value={model.id}>{model.label} · {model.model}</option>)}</select><span>{models.find(m => m.id === modelId)?.external ? 'External provider · charges may apply' : 'Local inference · no API charge'}</span></div>
         {error && <div className="global-error" role="alert">{error}<button type="button" onClick={() => setError('')}>Dismiss</button></div>}
         {loading ? <div className="loading-page"><span className="spinner" />Loading workspace…</div> : (
           <>
-            {view === 'review' && (selected ? <ReviewWorkspace key={`${selected.id}-${selected.draft ? 'ready' : 'pending'}`} job={selected} onJobChange={replaceJob} onDeleted={(id) => { setJobs((current) => current.filter((item) => item.id !== id)); setSelectedId(null) }} /> : <EmptyReview onCases={() => setView('cases')} />)}
-            {view === 'jobs' && <JobsView jobs={jobs} onOpen={openJob} onDelete={removeJob} />}
+            {view === 'review' && (selected ? <ReviewWorkspace canDelete={canDelete} key={`${selected.id}-${selected.draft ? 'ready' : 'pending'}`} job={selected} onJobChange={replaceJob} onDeleted={(id) => { setJobs((current) => current.filter((item) => item.id !== id)); setSelectedId(null) }} /> : <EmptyReview onCases={() => setView('cases')} />)}
+            {view === 'jobs' && <JobsView canDelete={canDelete} jobs={jobs} onOpen={openJob} onDelete={removeJob} />}
             {view === 'cases' && <CasesView cases={cases} busy={busy} onRun={runCase} />}
             {view === 'exports' && <ExportsView jobs={jobs} />}
             {view === 'configuration' && <ConfigurationView jobs={jobs} models={models} />}
+            {view === 'pilot' && <PilotView jobs={jobs} />}
           </>
         )}
       </div>

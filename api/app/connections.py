@@ -70,7 +70,7 @@ class Connections:
             }
             if profile.provider != "rule-based" and not local and url.scheme != "https":
                 raise ValueError("remote model connections require HTTPS")
-            profile.external = profile.external or not local
+            profile.external = profile.provider != "rule-based" and (profile.external or not local)
             secret = (
                 settings.model_api_key
                 if profile.id == "default"

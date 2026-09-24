@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import sqlite3
 import threading
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -19,12 +21,17 @@ class Database:
         self.path = path
         self._write_lock = threading.RLock()
 
-    def _connect(self) -> sqlite3.Connection:
+    @contextmanager
+    def _connect(self) -> Iterator[sqlite3.Connection]:
         connection = sqlite3.connect(self.path, timeout=10)
         connection.row_factory = sqlite3.Row
         connection.execute("PRAGMA foreign_keys = ON")
         connection.execute("PRAGMA busy_timeout = 5000")
-        return connection
+        try:
+            with connection:
+                yield connection
+        finally:
+            connection.close()
 
     def initialize(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)

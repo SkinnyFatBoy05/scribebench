@@ -6,6 +6,7 @@ const navigation = [
   { id: 'jobs', label: 'Jobs', Icon: JobsIcon },
   { id: 'cases', label: 'Case library', Icon: LibraryIcon },
   { id: 'exports', label: 'Exports', Icon: ExportIcon },
+  { id: 'pilot', label: 'Pilot & operations', Icon: JobsIcon },
   { id: 'configuration', label: 'Configuration', Icon: SettingsIcon },
 ] as const
 
@@ -39,10 +40,9 @@ export function Sidebar({ view, onChange }: Props) {
         ))}
       </nav>
       <div className="sidebar-footer">
-        <div><span className="cube" />Portfolio deployment</div>
-        <span>Self-hosted · v0.1.0</span>
+        <div><span className="cube" />Synthetic workspace</div>
+        <span>Local-first · human-reviewed</span>
       </div>
     </aside>
   )
 }
-

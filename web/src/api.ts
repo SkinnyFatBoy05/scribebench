@@ -24,6 +24,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  pilot: () => request<PilotStatus>('/api/pilot'),
+  operations: () => request<Operations>('/api/operations'),
+  feedback: (payload: { job_id: string; usability: number; accuracy: number; issue: string; comment: string; synthetic_confirmed: boolean }) => request('/api/pilot/feedback', { method: 'POST', body: JSON.stringify(payload) }),
   session: () => request<{ authenticated: boolean; required: boolean }>('/api/auth/session'),
   login: (key: string) => request('/api/auth/login', { method: 'POST', body: JSON.stringify({ key }) }),
   logout: () => request('/api/auth/logout', { method: 'POST' }),
@@ -63,3 +66,5 @@ export const api = {
 }
 
 export type ModelConnection = { id: string; label: string; provider: string; model: string; external: boolean; version: string }
+export type PilotStatus = { status: string; synthetic_only: boolean; pilot_id: string | null; expires_at: string | null; counts: Record<string, number>; participant_count: number; actor: string; can_submit_feedback: boolean }
+export type Operations = { job_counts: Record<string, number>; oldest_pending_seconds: number; failed_last_15_minutes: number; queue_depth: number; authentication_required: boolean; secure_cookies: boolean; pilot: string }

@@ -57,7 +57,9 @@ that inference will succeed. `/api/models` exposes no URL, key value or credenti
   Placeholder/short keys fail startup. Generate a key with a password manager; do not commit it.
 - Terminate HTTPS at your reverse proxy. Production cookies are Secure, HttpOnly, SameSite=Strict,
   expire after eight hours and are revoked on logout. Restarting the API signs out every session.
-  This is one shared workspace with one operator key, not multi-tenant RBAC or enterprise SSO.
+  This is one shared workspace, not multi-tenant RBAC or enterprise SSO. Optional bounded pilots
+  add individual participant keys, expiry and operator-only administrative actions; see
+  [pilot controls](pilot-operations.md).
 - Keep the API, SQLite and model server on private/loopback interfaces. Do not publish Ollama publicly.
   Local mode with no key is **unauthenticated** and only suitable for an isolated trusted workstation.
 - Nginx/Vite no longer inject a service key for anonymous visitors. Authenticate in the UI or use

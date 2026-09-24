@@ -1,0 +1,30 @@
+{
+  "generated_at": "2026-09-24T10:32:16.439437+00:00",
+  "scope": "isolated synthetic engineering drill, not a participant pilot or deployed infrastructure test",
+  "previous_release": "7191186c69c2ead95686784fd7eb6f9276e95f60",
+  "backup_sha256": "1a4089deaf17b88dc17ddf2f31bf25e406221af325d801119c6395c23e355278",
+  "source_unchanged": true,
+  "approved_export_equal_after_restore": true,
+  "approved_export_equal_under_previous_release": true,
+  "recovery_seconds": 0.043,
+  "previous_release_start_and_export_seconds": 0.998,
+  "monitor_fault_sequence": [
+    {
+      "event": "alert",
+      "state": "firing",
+      "condition": "model_or_api_unavailable"
+    },
+    {
+      "event": "alert",
+      "state": "resolved",
+      "condition": "model_or_api_unavailable"
+    }
+  ],
+  "limitations": [
+    "tiny one-job SQLite fixture",
+    "shared Python environment, not image rollback",
+    "no DNS/TLS/host outage",
+    "no external alert receiver",
+    "no real pilot participants"
+  ]
+}

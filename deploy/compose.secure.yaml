@@ -1,0 +1,57 @@
+# Prepared deployment only. Do not run until host/domain, secrets and ingress are authorised.
+name: scribebench-secure
+services:
+  api:
+    image: ${SCRIBE_API_IMAGE:?Set an immutable API image digest}
+    restart: unless-stopped
+    environment:
+      SCRIBE_ENV: production
+      SCRIBE_API_KEY: ${SCRIBE_API_KEY:?Set a strong operator key}
+      SCRIBE_DB_PATH: /data/scribebench.db
+      SCRIBE_MODEL_PROVIDER: ollama
+      SCRIBE_MODEL_NAME: ${SCRIBE_MODEL_NAME:-qwen3:4b}
+      SCRIBE_MODEL_BASE_URL: http://host.docker.internal:11434
+      SCRIBE_MODEL_OUTPUT_MODE: json_object
+      SCRIBE_MODEL_TIMEOUT_SECONDS: 180
+      SCRIBE_SEED_DEMO: "false"
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    volumes: ["records:/data"]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "5"}
+  web:
+    image: ${SCRIBE_WEB_IMAGE:?Set an immutable web image digest}
+    restart: unless-stopped
+    depends_on: [api]
+    security_opt: ["no-new-privileges:true"]
+  ingress:
+    image: ${SCRIBE_CADDY_IMAGE:?Set an approved immutable Caddy image digest}
+    restart: unless-stopped
+    ports: ["443:443", "80:80"]
+    environment:
+      SCRIBE_DOMAIN: ${SCRIBE_DOMAIN:?Set the authorised domain}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - tls:/data
+      - caddy-config:/config
+    depends_on: [web]
+  monitor:
+    image: ${SCRIBE_API_IMAGE:?Set an immutable API image digest}
+    command: ["uv", "run", "--no-sync", "python", "-m", "scripts.monitor"]
+    environment:
+      SCRIBE_MONITOR_URL: http://api:8000
+      SCRIBE_API_KEY: ${SCRIBE_API_KEY:?Set a strong operator key}
+      SCRIBE_ALERT_WEBHOOK: ${SCRIBE_ALERT_WEBHOOK:-}
+    restart: unless-stopped
+    depends_on: [api]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "5"}
+volumes:
+  records:
+  tls:
+  caddy-config:

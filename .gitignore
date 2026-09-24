@@ -2,6 +2,9 @@
 .env.*
 !.env.example
 models.local.json
+pilot.local.json
+deploy/*.local.yaml
+deploy/*.local.json
 *.log
 .venv/
 __pycache__/

@@ -13,6 +13,7 @@ RUN uv sync --frozen --no-dev
 
 COPY app ./app
 COPY data ./data
+COPY scripts ./scripts
 COPY main.py ./main.py
 
 RUN useradd --create-home --uid 10001 appuser && mkdir -p /data && chown appuser:appuser /data
@@ -20,4 +21,3 @@ USER appuser
 
 EXPOSE 8000
 CMD ["uv", "run", "--no-sync", "fastapi", "run", "main.py", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
-

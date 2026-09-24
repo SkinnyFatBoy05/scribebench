@@ -1,0 +1,11 @@
+{
+  "pilot_id": "REPLACE_WITH_APPROVED_PILOT_ID",
+  "owner": "REPLACE_WITH_OWNER",
+  "authorised_by": "REPLACE_WITH_APPROVER",
+  "authorised_at": "REPLACE_WITH_ACTUAL_ISO8601_APPROVAL_TIME",
+  "expires_at": "REPLACE_WITH_APPROVED_ISO8601_END_TIME",
+  "synthetic_only": true,
+  "participants": [
+    {"id": "participant-01", "key_env": "SCRIBE_PARTICIPANT_01_KEY"}
+  ]
+}

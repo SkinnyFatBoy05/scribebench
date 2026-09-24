@@ -18,7 +18,7 @@ class Login(BaseModel):
 
 
 class Auth:
-    def __init__(self, settings: Settings):
+    def __init__(self, settings: Settings, participant_keys: dict[str, str] | None = None):
         self.key = settings.api_key
         self.secure = settings.environment == "production"
         if settings.environment not in {"local", "production"}:
@@ -27,17 +27,34 @@ class Auth:
             raise ValueError(
                 "production requires a random SCRIBE_API_KEY of at least 32 characters"
             )
-        self.sessions: dict[str, float] = {}
+        self.keys = {"operator": self.key, **(participant_keys or {})}
+        if participant_keys and (not self.secure or len(self.key) < 32):
+            raise ValueError("authorised pilots require production mode, HTTPS and an operator key")
+        if len(set(self.keys.values())) != len(self.keys):
+            raise ValueError("operator and participant keys must be distinct")
+        self.sessions: dict[str, tuple[float, str]] = {}
         self.failures: deque[float] = deque(maxlen=20)
 
     def authenticated(self, request: Request) -> bool:
+        return self.identity(request) is not None
+
+    def key_identity(self, key: str) -> str | None:
+        identity = None
+        for actor, expected in self.keys.items():
+            if key and expected and hmac.compare_digest(key.encode(), expected.encode()):
+                identity = actor
+        return identity
+
+    def identity(self, request: Request) -> str | None:
         if not self.key:
-            return True
+            return "local"
         supplied = request.headers.get("x-api-key", "")
-        if supplied and hmac.compare_digest(supplied.encode(), self.key.encode()):
-            return True
+        actor = self.key_identity(supplied)
+        if actor:
+            return actor
         token = request.cookies.get("scribe_session", "")
-        return self.sessions.get(hashlib.sha256(token.encode()).hexdigest(), 0) > time.time()
+        expiry, actor = self.sessions.get(hashlib.sha256(token.encode()).hexdigest(), (0, ""))
+        return actor if expiry > time.time() else None
 
     def origin(self, request: Request):
         origin = request.headers.get("origin")
@@ -59,14 +76,15 @@ class Auth:
             self.failures.popleft()
         if len(self.failures) >= 10:
             raise HTTPException(429, "too many sign-in attempts; wait one minute")
-        if not self.key or not hmac.compare_digest(key.encode(), self.key.encode()):
+        actor = self.key_identity(key)
+        if not actor:
             self.failures.append(now)
             raise HTTPException(401, "invalid workspace key")
-        self.sessions = {k: expiry for k, expiry in self.sessions.items() if expiry > now}
+        self.sessions = {k: entry for k, entry in self.sessions.items() if entry[0] > now}
         if len(self.sessions) >= 100:
             raise HTTPException(429, "session capacity reached")
         token = secrets.token_urlsafe(32)
-        self.sessions[hashlib.sha256(token.encode()).hexdigest()] = now + 28800
+        self.sessions[hashlib.sha256(token.encode()).hexdigest()] = (now + 28800, actor)
         response.set_cookie(
             "scribe_session",
             token,

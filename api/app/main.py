@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import json
 import logging
+import sqlite3
 import time
 import uuid
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, closing
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -17,6 +18,7 @@ from .connections import Connections
 from .database import Database
 from .metrics import Metrics
 from .model import build_model
+from .pilot import Feedback, Pilot
 from .schemas import (
     CreateJobRequest,
     EditDraftRequest,
@@ -33,7 +35,8 @@ logger = logging.getLogger("scribebench.http")
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     configured = settings or Settings.from_env()
-    auth = Auth(configured)
+    pilot = Pilot(configured.pilot_manifest, configured.db_path)
+    auth = Auth(configured, pilot.keys)
     connections = Connections(configured)
     database = Database(configured.db_path)
     metrics = Metrics()
@@ -43,6 +46,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         database.initialize()
+        pilot.initialize()
+        if pilot.manifest:
+            allowed = {case.id: case.transcript for case in load_cases(configured.data_path)}
+            with closing(sqlite3.connect(configured.db_path)) as db:
+                for case_id, transcript in db.execute("SELECT case_id, transcript FROM jobs"):
+                    if allowed.get(case_id) != transcript:
+                        raise ValueError(
+                            "pilot requires a dedicated database of unchanged library cases"
+                        )
         await runner.start()
         app.state.ready = True
         if configured.seed_demo and not database.list_jobs(limit=1):
@@ -79,7 +91,78 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_headers=["Content-Type", "X-API-Key", "Idempotency-Key", "X-Request-ID"],
     )
 
-    require_api_key = auth.require
+    async def require_api_key(request: Request):
+        await auth.require(request)
+        if auth.identity(request) in pilot.keys:
+            pilot.require_active()
+
+    async def require_operator(request: Request):
+        await require_api_key(request)
+        if auth.identity(request) not in {"operator", "local"}:
+            raise HTTPException(403, "operator access required")
+
+    @app.get("/api/pilot", dependencies=[Depends(require_api_key)])
+    async def pilot_status(request: Request):
+        return {
+            **pilot.status(),
+            "actor": auth.identity(request),
+            "can_submit_feedback": pilot.active() and auth.identity(request) in pilot.keys,
+        }
+
+    @app.post("/api/pilot/feedback", status_code=201, dependencies=[Depends(require_api_key)])
+    async def pilot_feedback(payload: Feedback, request: Request):
+        pilot.require_active()
+        if auth.identity(request) not in pilot.keys:
+            raise HTTPException(403, "only authorised participants may submit pilot feedback")
+        if not payload.synthetic_confirmed:
+            raise HTTPException(422, "confirm feedback contains no real patient information")
+        job = job_or_404(payload.job_id)
+        if not job["draft"]:
+            raise HTTPException(409, "review a completed draft before giving feedback")
+        pilot.record(
+            auth.identity(request),
+            "feedback",
+            payload.job_id,
+            payload.model_dump(exclude={"job_id"}),
+        )
+        return {"saved": True}
+
+    @app.get("/api/pilot/report", dependencies=[Depends(require_operator)])
+    async def pilot_report():
+        return JSONResponse(
+            pilot.report(),
+            headers={"Content-Disposition": 'attachment; filename="synthetic-pilot-report.json"'},
+        )
+
+    @app.get("/api/operations", dependencies=[Depends(require_operator)])
+    async def operations():
+        with closing(sqlite3.connect(configured.db_path)) as db:
+            counts = dict(
+                db.execute("SELECT status, COUNT(*) FROM jobs GROUP BY status").fetchall()
+            )
+            oldest = db.execute(
+                "SELECT MIN(updated_at) FROM jobs WHERE status IN ('queued','running','retrying')"
+            ).fetchone()[0]
+            failures = db.execute(
+                "SELECT COUNT(*) FROM jobs WHERE status='failed' "
+                "AND julianday(updated_at) >= julianday('now','-15 minutes')"
+            ).fetchone()[0]
+        from datetime import UTC, datetime
+
+        age = (
+            max(0, (datetime.now(UTC) - datetime.fromisoformat(oldest)).total_seconds())
+            if oldest
+            else 0
+        )
+        return {
+            "job_counts": counts,
+            "oldest_pending_seconds": round(age, 1),
+            "failed_last_15_minutes": failures,
+            "queue_depth": runner.queue.qsize(),
+            "authentication_required": bool(configured.api_key),
+            "secure_cookies": auth.secure,
+            "pilot": pilot.status()["status"],
+        }
 
     @app.get("/api/auth/session")
     async def session(request: Request):
@@ -187,8 +270,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def submit_job(
         payload: CreateJobRequest,
         response: Response,
+        request: Request,
         idempotency_key: str = Header(alias="Idempotency-Key", min_length=8, max_length=200),
     ) -> dict[str, object]:
+        if pilot.manifest:
+            pilot.require_active()
+            allowed = {case.id: case.transcript for case in load_cases(configured.data_path)}
+            if allowed.get(payload.case_id) != payload.transcript:
+                raise HTTPException(422, "pilot accepts unchanged synthetic library cases only")
+            if (
+                connections.profiles.get(payload.model_id)
+                and connections.profiles[payload.model_id].external
+            ):
+                raise HTTPException(
+                    422, "pilot inference must remain on an approved local connection"
+                )
         if payload.model_id not in connections.versions:
             raise HTTPException(422, "unknown model connection")
         version = connections.versions[payload.model_id]
@@ -215,6 +311,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             model_version=version,
         )
         if created:
+            pilot.record(
+                auth.identity(request), "job_submitted", str(job["id"]), {"model_version": version}
+            )
             runner.submit(str(job["id"]))
         else:
             response.status_code = 200
@@ -243,7 +342,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         response_model=JobView,
         dependencies=[Depends(require_api_key)],
     )
-    async def edit_draft(job_id: str, payload: EditDraftRequest) -> dict[str, object]:
+    async def edit_draft(
+        job_id: str, payload: EditDraftRequest, request: Request
+    ) -> dict[str, object]:
         job = job_or_404(job_id)
         if job["status"] not in {JobStatus.DRAFT_READY.value, JobStatus.UNDER_REVIEW.value}:
             raise HTTPException(status_code=409, detail="job is not editable")
@@ -252,6 +353,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except ValueError as error:
             raise HTTPException(status_code=422, detail=str(error)) from error
         database.save_draft(job_id, payload.draft, status=JobStatus.UNDER_REVIEW)
+        pilot.record(auth.identity(request), "draft_edited", job_id)
         return job_or_404(job_id)
 
     @app.post(
@@ -259,20 +361,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         response_model=JobView,
         dependencies=[Depends(require_api_key)],
     )
-    async def approve_job(job_id: str) -> dict[str, object]:
+    async def approve_job(job_id: str, request: Request) -> dict[str, object]:
         job = job_or_404(job_id)
         if job["status"] not in {JobStatus.DRAFT_READY.value, JobStatus.UNDER_REVIEW.value}:
             raise HTTPException(status_code=409, detail="job is not ready for approval")
         if not job["draft"] or job["draft"].get("abstained"):
             raise HTTPException(status_code=409, detail="abstained drafts cannot be approved")
         database.approve(job_id)
+        pilot.record(auth.identity(request), "draft_approved", job_id)
         return job_or_404(job_id)
 
     @app.get(
         "/api/jobs/{job_id}/export",
         dependencies=[Depends(require_api_key)],
     )
-    async def export_job(job_id: str) -> JSONResponse:
+    async def export_job(job_id: str, request: Request) -> JSONResponse:
         job = job_or_404(job_id)
         if job["status"] != JobStatus.APPROVED.value:
             raise HTTPException(status_code=409, detail="human approval is required before export")
@@ -285,6 +388,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "draft": job["draft"],
             "disclaimer": "Synthetic portfolio output; not for clinical use.",
         }
+        pilot.record(auth.identity(request), "draft_exported", job_id)
         return JSONResponse(
             exported,
             headers={"Content-Disposition": f'attachment; filename="scribebench-{job_id}.json"'},
@@ -293,7 +397,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.delete(
         "/api/jobs/{job_id}",
         status_code=204,
-        dependencies=[Depends(require_api_key)],
+        dependencies=[Depends(require_operator)],
     )
     async def delete_job(job_id: str) -> Response:
         if not database.delete_job(job_id):

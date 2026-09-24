@@ -30,6 +30,7 @@ class Settings:
     environment: str = "local"
     model_output_mode: str = "json_schema"
     models_file: str = ""
+    pilot_manifest: str = ""
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -54,4 +55,5 @@ class Settings:
             environment=os.getenv("SCRIBE_ENV", "local"),
             model_output_mode=os.getenv("SCRIBE_MODEL_OUTPUT_MODE", "json_object"),
             models_file=os.getenv("SCRIBE_MODELS_FILE", ""),
+            pilot_manifest=os.getenv("SCRIBE_PILOT_MANIFEST", ""),
         )

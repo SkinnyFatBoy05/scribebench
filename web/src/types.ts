@@ -55,5 +55,4 @@ export interface SyntheticCase {
   expected: Record<string, unknown>
 }
 
-export type ViewName = 'review' | 'jobs' | 'cases' | 'exports' | 'configuration'
-
+export type ViewName = 'review' | 'jobs' | 'cases' | 'exports' | 'configuration' | 'pilot'

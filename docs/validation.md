@@ -2,6 +2,26 @@
 
 Environment: Windows, Python 3.11, Node.js 24.11.1.
 
+## Build-only pilot/operations and visual refinement
+
+No pilot was activated and no deployment/invitations were performed, per the user's build-only scope.
+The existing design was refined with readable typography, larger controls, panel spacing and mobile
+navigation, plus a Pilot & operations view backed by real status. Desktop (1440×1000) and mobile
+(390×844) inspection found no horizontal document overflow. The inactive pilot shows no participants
+or feedback and does not expose a feedback form to unauthorised users.
+
+29 API tests cover the earlier functionality plus pilot admission/expiry/identity, operator-only
+reporting/deletion, synthetic-library input restrictions, unsafe database admission, immutable
+backup/restore, monitor fault/recovery transitions and deployment-configuration rejection.
+Four frontend tests, frontend lint and the production build pass. Compose configuration parsing
+passes with non-deployable test values; the Docker engine is not running, so containers/TLS are untested.
+
+`api/artifacts/operational-drill.json` records an isolated backup, fresh-path restore and an actual
+previous-release subprocess reading the same approved export. Source/snapshot hashes remain unchanged.
+This drill discovered and fixed SQLite connection leaks. It does not claim a deployed image rollback,
+an achieved production RTO, actual alert delivery, participant usage or human feedback.
+See [operating and pilot gates](pilot-operations.md) for the explicit remaining acceptance work.
+
 ## Local-LLM hardening update
 
 The default is now real Ollama Qwen3 4B Q4_K_M, not the rule baseline. The qualification artifact records
