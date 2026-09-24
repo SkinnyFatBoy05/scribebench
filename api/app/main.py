@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hmac
 import json
 import logging
 import time
@@ -8,11 +7,13 @@ import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response, status
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse
 
+from .auth import Auth, Login
 from .config import Settings
+from .connections import Connections
 from .database import Database
 from .metrics import Metrics
 from .model import build_model
@@ -32,9 +33,12 @@ logger = logging.getLogger("scribebench.http")
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     configured = settings or Settings.from_env()
+    auth = Auth(configured)
+    connections = Connections(configured)
     database = Database(configured.db_path)
     metrics = Metrics()
     runner = JobRunner(configured, database, build_model(configured), metrics)
+    runner.models = connections.models
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -48,7 +52,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 transcript=demo.transcript,
                 idempotency_key=f"seed-{demo.id}",
                 case_id=demo.id,
-                model_version=configured.model_version,
+                model_version=connections.versions["default"],
             )
             if created:
                 runner.submit(str(job["id"]))
@@ -75,11 +79,31 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_headers=["Content-Type", "X-API-Key", "Idempotency-Key", "X-Request-ID"],
     )
 
-    async def require_api_key(x_api_key: str | None = Header(default=None)) -> None:
-        if configured.api_key and (
-            not x_api_key or not hmac.compare_digest(x_api_key, configured.api_key)
-        ):
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid API key")
+    require_api_key = auth.require
+
+    @app.get("/api/auth/session")
+    async def session(request: Request):
+        return {"authenticated": auth.authenticated(request), "required": bool(configured.api_key)}
+
+    @app.post("/api/auth/login")
+    async def login(payload: Login, request: Request, response: Response):
+        auth.login(request, response, payload.key)
+        return {"authenticated": True}
+
+    @app.post("/api/auth/logout")
+    async def logout(request: Request, response: Response):
+        auth.logout(request, response)
+        return {"authenticated": False}
+
+    @app.get("/api/models", dependencies=[Depends(require_api_key)])
+    async def models():
+        return connections.public()
+
+    @app.get("/api/models/{model_id}/check", dependencies=[Depends(require_api_key)])
+    async def check_model(model_id: str):
+        if model_id not in connections.profiles:
+            raise HTTPException(404, "model connection not found")
+        return await connections.check(model_id)
 
     @app.middleware("http")
     async def request_context(request: Request, call_next):  # type: ignore[no-untyped-def]
@@ -89,7 +113,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             response = await call_next(request)
         except Exception:
             metrics.record_request(request.method, request.url.path, 500)
-            logger.exception(
+            logger.error(
                 json.dumps(
                     {
                         "event": "request_failed",
@@ -102,6 +126,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise
         duration_ms = (time.perf_counter() - started) * 1000
         response.headers["X-Request-ID"] = request_id
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["X-Content-Type-Options"] = "nosniff"
         metrics.record_request(request.method, request.url.path, response.status_code)
         logger.info(
             json.dumps(
@@ -135,9 +161,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def ready() -> dict[str, object]:
         if not app.state.ready:
             raise HTTPException(status_code=503, detail="service is starting")
-        return {"ready": True, "queue_depth": runner.queue.qsize()}
+        discovery = await connections.check("default")
+        if not discovery["available"]:
+            raise HTTPException(503, "default model unavailable or not discoverable")
+        return {"ready": True, "queue_depth": runner.queue.qsize(), "inference_tested": False}
 
-    @app.get("/metrics", response_class=PlainTextResponse)
+    @app.get("/metrics", response_class=PlainTextResponse, dependencies=[Depends(require_api_key)])
     async def prometheus_metrics() -> str:
         return metrics.render(runner.queue.qsize())
 
@@ -160,11 +189,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         response: Response,
         idempotency_key: str = Header(alias="Idempotency-Key", min_length=8, max_length=200),
     ) -> dict[str, object]:
+        if payload.model_id not in connections.versions:
+            raise HTTPException(422, "unknown model connection")
+        version = connections.versions[payload.model_id]
+        profile = connections.profiles[payload.model_id]
+        if profile.provider == "ollama" and len(payload.transcript.encode("utf-8")) > 12000:
+            raise HTTPException(422, "local model accepts at most 12000 UTF-8 bytes per transcript")
         existing = database.get_by_key(idempotency_key)
         if existing:
             if (
                 existing["transcript"] != payload.transcript
                 or existing["case_id"] != payload.case_id
+                or existing["model_version"] != version
             ):
                 raise HTTPException(status_code=409, detail="idempotency key has different input")
             response.status_code = 200
@@ -176,7 +212,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             transcript=payload.transcript,
             idempotency_key=idempotency_key,
             case_id=payload.case_id,
-            model_version=configured.model_version,
+            model_version=version,
         )
         if created:
             runner.submit(str(job["id"]))

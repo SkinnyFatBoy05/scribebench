@@ -13,9 +13,8 @@ Date: 2026-09-24
 
 `Qwen/Qwen2.5-7B-Instruct` is the provisional self-hosted baseline because the licence is permissive, its declared context window leaves more room for long transcripts plus the output schema, and vLLM can expose it through an OpenAI-compatible endpoint. This is a deployment choice, not evidence of clinical quality.
 
-The repository defaults to `rule-based-baseline-v1` so every test is reproducible without model downloads or GPU spend. Switching `SCRIBE_MODEL_PROVIDER=openai-compatible` activates the selected model adapter.
+This initial proposal is superseded for local operation: the repository now defaults to Ollama Qwen3 4B Q4_K_M, tested on an RTX 3060 laptop 6GB. Automated unit tests still explicitly use the rule baseline or mocked HTTP. See [current connections](models.md) and the real-model qualification artifact. The larger candidates above remain untested comparisons.
 
 ## Promotion gate
 
 Qwen is promoted only if it beats the deterministic baseline on unsupported claims and omission handling without regressing refusal behaviour or structured-output validity. Mistral remains the fallback comparison. Record exact model revisions, quantisation, prompt, seed, hardware, concurrency, and raw evaluator artefacts.
-

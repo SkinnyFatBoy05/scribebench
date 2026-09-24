@@ -5,16 +5,22 @@ services:
     build: ./api
     environment:
       SCRIBE_API_KEY: ${SCRIBE_API_KEY:-}
+      SCRIBE_ENV: ${SCRIBE_ENV:-local}
       SCRIBE_DB_PATH: /data/scribebench.db
-      SCRIBE_MODEL_PROVIDER: ${SCRIBE_MODEL_PROVIDER:-rule-based}
-      SCRIBE_MODEL_VERSION: ${SCRIBE_MODEL_VERSION:-rule-based-baseline-v1}
-      SCRIBE_MODEL_BASE_URL: ${SCRIBE_MODEL_BASE_URL:-http://model:8000}
-      SCRIBE_MODEL_NAME: ${SCRIBE_MODEL_NAME:-Qwen/Qwen2.5-7B-Instruct}
-      SCRIBE_MODEL_TIMEOUT_SECONDS: ${SCRIBE_MODEL_TIMEOUT_SECONDS:-60}
+      SCRIBE_MODEL_PROVIDER: ${SCRIBE_MODEL_PROVIDER:-ollama}
+      SCRIBE_MODEL_VERSION: ${SCRIBE_MODEL_VERSION:-local-v2}
+      SCRIBE_MODEL_BASE_URL: ${SCRIBE_MODEL_BASE_URL:-http://host.docker.internal:11434}
+      SCRIBE_MODEL_NAME: ${SCRIBE_MODEL_NAME:-qwen3:4b}
+      SCRIBE_MODEL_OUTPUT_MODE: ${SCRIBE_MODEL_OUTPUT_MODE:-json_object}
+      SCRIBE_MODEL_API_KEY: ${SCRIBE_MODEL_API_KEY:-}
+      SCRIBE_MODELS_FILE: ${SCRIBE_MODELS_FILE:-}
+      SCRIBE_MODEL_TIMEOUT_SECONDS: ${SCRIBE_MODEL_TIMEOUT_SECONDS:-180}
       SCRIBE_QUEUE_CAPACITY: ${SCRIBE_QUEUE_CAPACITY:-32}
       SCRIBE_MAX_RETRIES: ${SCRIBE_MAX_RETRIES:-2}
       SCRIBE_WORKERS: ${SCRIBE_WORKERS:-1}
-      SCRIBE_SEED_DEMO: ${SCRIBE_SEED_DEMO:-true}
+      SCRIBE_SEED_DEMO: ${SCRIBE_SEED_DEMO:-false}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - scribebench-data:/data
     ports:
@@ -29,8 +35,6 @@ services:
   web:
     build:
       context: ./web
-    environment:
-      SCRIBE_API_KEY: ${SCRIBE_API_KEY:-}
     depends_on:
       api:
         condition: service_healthy

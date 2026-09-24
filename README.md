@@ -12,17 +12,23 @@ The image is a generated design reference. The implementation is code-native and
 
 - Durable, idempotent FastAPI jobs stored in SQLite/WAL.
 - Bounded queue, timeouts, retries, restart recovery, model versioning, and rollback-by-configuration.
-- A deterministic baseline that is runnable without a GPU and an OpenAI-compatible adapter for a self-hosted vLLM server.
+- Real local Ollama inference (Qwen3 4B by default), selectable operator-owned model connections, and OpenAI-compatible APIs/gateways. The rule-based provider is only an explicit test baseline.
+- Single-workspace key sign-in with expiring HttpOnly sessions, logout revocation, login throttling, cross-origin write protection, and fail-fast production configuration.
 - Structured validation, evidence references, contradictions, missing-information flags, and instruction-in-transcript handling.
 - React review interface with edits, approval gate, deletion, job states, and approved-only JSON export.
 - Request IDs, Prometheus-format metrics, latency/token counters, and transcript-free application logs.
 - Synthetic scenario-family splits, a repeatable baseline evaluator, LoRA training scaffold, recovery tests, and operating docs.
 
-The LoRA job and GPU benchmark are intentionally supplied but **not claimed as run**. They require approved GPU spend and recorded hardware details.
+Local GPU inference has been exercised on this workstation; see [qualification evidence](api/artifacts/local-model-qualification.json). LoRA training, hosted APIs, Docker/GPU-container qualification, multi-user identity and clinical validation are **not claimed as run**. This is a hardened single-workspace application, not a certified clinical production system.
 
 ## Run locally
 
-Prerequisites: Python 3.11+, [uv](https://docs.astral.sh/uv/), Node.js 22.12+ (validated with Node.js 24).
+Prerequisites: Python 3.11+, [uv](https://docs.astral.sh/uv/), Node.js 22.12+, and Ollama. Local inference has no per-token API charge; hardware/electricity are your responsibility.
+
+```bash
+ollama pull qwen3:4b
+# Start Ollama if its local service is not already running: ollama serve
+```
 
 ```bash
 cd api
@@ -38,9 +44,9 @@ npm install
 npm run dev
 ```
 
-Open `http://localhost:5173`. The local API is open only when `SCRIBE_API_KEY` is unset; set it outside loopback environments.
+Open `http://localhost:5173`. Native defaults use Ollama on port 11434. Set `SCRIBE_API_KEY` in the API environment to enable the sign-in screen; do not put it in Vite variables. Environment files are not implicitly loaded by the native API command. For network deployment, use HTTPS, `SCRIBE_ENV=production`, and a random key of at least 32 characters. See [model connections and deployment](docs/models.md).
 
-Docker baseline:
+Docker frontend/API with host Ollama (Ollama must be reachable from Docker; do not expose its port publicly):
 
 ```bash
 docker compose up --build
@@ -48,10 +54,10 @@ docker compose up --build
 
 Open `http://localhost:4173`.
 
-GPU-backed model serving (after reviewing image/model versions and accepting the model download):
+Optional vLLM container (unqualified here; explicitly configure its model and endpoint):
 
 ```bash
-SCRIBE_MODEL_PROVIDER=openai-compatible docker compose --profile gpu up --build
+SCRIBE_MODEL_PROVIDER=openai-compatible SCRIBE_MODEL_NAME=Qwen/Qwen2.5-7B-Instruct SCRIBE_MODEL_BASE_URL=http://model:8000 docker compose --profile gpu up --build
 ```
 
 ## Verify

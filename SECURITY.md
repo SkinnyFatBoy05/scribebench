@@ -6,7 +6,7 @@ Report vulnerabilities privately through the GitHub repository's security adviso
 
 ## Current controls
 
-- optional deployment-injected API key;
+- single-workspace API key and expiring HttpOnly browser sessions; production configuration requires a strong key and HTTPS;
 - same-origin reverse proxy and restrictive browser headers;
 - bounded input, queue, timeouts, and retries;
 - server-side structured validation and evidence-line verification;
@@ -16,4 +16,3 @@ Report vulnerabilities privately through the GitHub repository's security adviso
 - pinned container and training dependencies.
 
 Before real-user use, add an identity provider, per-user and per-case authorisation, immutable audit records, TLS/ingress controls, dependency and image scanning, formal threat modelling, privacy review, clinical governance, and an external penetration test.
-

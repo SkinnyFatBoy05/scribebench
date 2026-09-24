@@ -8,10 +8,7 @@ export default defineConfig({
     proxy: {
       '/api': {
         target: 'http://127.0.0.1:8000',
-        changeOrigin: true,
-        headers: process.env.SCRIBE_API_KEY
-          ? { 'X-API-Key': process.env.SCRIBE_API_KEY }
-          : undefined,
+        changeOrigin: false,
       },
       '/metrics': {
         target: 'http://127.0.0.1:8000',

@@ -50,6 +50,7 @@ class StructuredDraft(BaseModel):
 
 
 class CreateJobRequest(BaseModel):
+    model_id: str = Field(default="default", max_length=80)
     transcript: str = Field(min_length=20, max_length=50_000)
     synthetic: Literal[True]
     case_id: str | None = Field(default=None, max_length=100)

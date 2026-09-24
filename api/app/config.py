@@ -27,6 +27,9 @@ class Settings:
     workers: int
     seed_demo: bool
     retry_delay_seconds: float = 0.2
+    environment: str = "local"
+    model_output_mode: str = "json_schema"
+    models_file: str = ""
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -37,15 +40,18 @@ class Settings:
                 os.getenv("SCRIBE_DATA_PATH", project_dir / "data" / "synthetic_cases.json")
             ),
             api_key=os.getenv("SCRIBE_API_KEY", ""),
-            model_provider=os.getenv("SCRIBE_MODEL_PROVIDER", "rule-based"),
-            model_version=os.getenv("SCRIBE_MODEL_VERSION", "rule-based-baseline-v1"),
-            model_base_url=os.getenv("SCRIBE_MODEL_BASE_URL", "http://127.0.0.1:8001"),
-            model_name=os.getenv("SCRIBE_MODEL_NAME", "Qwen/Qwen2.5-7B-Instruct"),
-            model_api_key=os.getenv("SCRIBE_MODEL_API_KEY", "not-required"),
-            model_timeout_seconds=float(os.getenv("SCRIBE_MODEL_TIMEOUT_SECONDS", "60")),
+            model_provider=os.getenv("SCRIBE_MODEL_PROVIDER", "ollama"),
+            model_version=os.getenv("SCRIBE_MODEL_VERSION", "ollama-qwen3-4b-v1"),
+            model_base_url=os.getenv("SCRIBE_MODEL_BASE_URL", "http://127.0.0.1:11434"),
+            model_name=os.getenv("SCRIBE_MODEL_NAME", "qwen3:4b"),
+            model_api_key=os.getenv("SCRIBE_MODEL_API_KEY", ""),
+            model_timeout_seconds=float(os.getenv("SCRIBE_MODEL_TIMEOUT_SECONDS", "180")),
             queue_capacity=max(1, int(os.getenv("SCRIBE_QUEUE_CAPACITY", "32"))),
             max_retries=max(0, int(os.getenv("SCRIBE_MAX_RETRIES", "2"))),
             workers=max(1, int(os.getenv("SCRIBE_WORKERS", "1"))),
-            seed_demo=_as_bool(os.getenv("SCRIBE_SEED_DEMO"), True),
+            seed_demo=_as_bool(os.getenv("SCRIBE_SEED_DEMO"), False),
             retry_delay_seconds=float(os.getenv("SCRIBE_RETRY_DELAY_SECONDS", "0.2")),
+            environment=os.getenv("SCRIBE_ENV", "local"),
+            model_output_mode=os.getenv("SCRIBE_MODEL_OUTPUT_MODE", "json_object"),
+            models_file=os.getenv("SCRIBE_MODELS_FILE", ""),
         )

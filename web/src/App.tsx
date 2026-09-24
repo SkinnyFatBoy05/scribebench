@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import './App.css'
-import { api } from './api'
+import { api, type ModelConnection } from './api'
+import { AuthGate } from './components/AuthGate'
 import { JobProgress } from './components/JobProgress'
 import { NotePanel } from './components/NotePanel'
 import { Sidebar } from './components/Sidebar'
@@ -211,14 +212,22 @@ function ExportsView({ jobs }: { jobs: Job[] }) {
   )
 }
 
-function ConfigurationView({ jobs }: { jobs: Job[] }) {
+function ConfigurationView({ jobs, models }: { jobs: Job[]; models: ModelConnection[] }) {
   const latest = jobs[0]
+  const [connectionStatus, setConnectionStatus] = useState<Record<string, string>>({})
+  const checkConnection = async (id: string) => {
+    setConnectionStatus(current => ({ ...current, [id]: 'Checking…' }))
+    try { const result = await api.checkModel(id); setConnectionStatus(current => ({ ...current, [id]: result.detail })) }
+    catch { setConnectionStatus(current => ({ ...current, [id]: 'Connection check failed' })) }
+  }
   return (
     <main className="list-view">
-      <div className="page-heading"><div><h1>Configuration</h1><p>Read-only runtime details; secrets are managed outside the browser.</p></div></div>
+      <div className="page-heading"><div><h1>Model connections</h1><p>Select a connection above for new jobs. Existing drafts keep their original model attribution.</p></div></div>
+      <div className="case-list">{models.map(model => <article key={model.id}><div><h2>{model.label}</h2><p>{model.model} · {model.provider}</p><p role="status">{connectionStatus[model.id]}</p></div><span>{model.external ? 'External · provider charges may apply' : model.provider === 'rule-based' ? 'Test baseline · not an LLM' : 'Self-hosted · no API charge'}</span><button className="secondary" onClick={() => checkConnection(model.id)}>Check connection</button></article>)}</div>
+      <p className="connection-help">To attach a model, add an operator-owned connection to SCRIBE_MODELS_FILE and restart the API. Supports Ollama and OpenAI-compatible APIs (including gateways for other providers). Credentials are read from server environment variables, never returned to the browser. See docs/models.md for examples.</p>
       <dl className="configuration-list">
         <div><dt>Deployment boundary</dt><dd>Portfolio deployment · synthetic text only</dd></div>
-        <div><dt>Active model version</dt><dd>{latest?.model_version ?? 'Not reported yet'}</dd></div>
+        <div><dt>Most recent job model</dt><dd>{latest?.model_version ?? 'No jobs yet'}</dd></div>
         <div><dt>Storage</dt><dd>Durable SQLite with WAL and restart recovery</dd></div>
         <div><dt>Export policy</dt><dd>Human approval required</dd></div>
         <div><dt>Telemetry policy</dt><dd>Request metadata, latency, tokens and errors; no transcript logging</dd></div>
@@ -243,6 +252,8 @@ function NewTranscriptDialog({ onClose, onSubmit, busy }: { onClose: () => void;
 }
 
 function App() {
+  const [models, setModels] = useState<ModelConnection[]>([])
+  const [modelId, setModelId] = useState('default')
   const [view, setView] = useState<ViewName>('review')
   const [jobs, setJobs] = useState<Job[]>([])
   const [cases, setCases] = useState<SyntheticCase[]>([])
@@ -254,8 +265,9 @@ function App() {
   const selected = useMemo(() => jobs.find((job) => job.id === selectedId) ?? null, [jobs, selectedId])
 
   useEffect(() => {
-    Promise.all([api.listJobs(), api.listCases()])
-      .then(([loadedJobs, loadedCases]) => {
+    Promise.all([api.listJobs(), api.listCases(), api.models()])
+      .then(([loadedJobs, loadedCases, loadedModels]) => {
+        setModels(loadedModels)
         setJobs(loadedJobs)
         setCases(loadedCases)
         if (loadedJobs[0]) setSelectedId(loadedJobs[0].id)
@@ -282,7 +294,8 @@ function App() {
   const runCase = async (item: SyntheticCase) => {
     setBusy(true); setError('')
     try {
-      const job = await api.createJob(item)
+      if (models.find(m => m.id === modelId)?.external && !window.confirm('Send this synthetic transcript to the selected external provider? API charges may apply.')) return
+      const job = await api.createJob(item, modelId)
       replaceJob(job); setView('review')
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Unable to create job')
@@ -292,7 +305,8 @@ function App() {
   const submitTranscript = async (transcript: string) => {
     setBusy(true); setError('')
     try {
-      const job = await api.createTranscript(transcript)
+      if (models.find(m => m.id === modelId)?.external && !window.confirm('Send this synthetic transcript to the selected external provider? API charges may apply.')) return
+      const job = await api.createTranscript(transcript, modelId)
       replaceJob(job); setView('review'); setDialogOpen(false)
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Unable to create job')
@@ -315,6 +329,7 @@ function App() {
       <Sidebar view={view} onChange={setView} />
       <div className="app-main">
         <Header onNew={() => setDialogOpen(true)} />
+        <div className="model-bar"><label htmlFor="model-select">Model for new jobs</label><select id="model-select" value={modelId} onChange={e => setModelId(e.target.value)}>{models.map(model => <option key={model.id} value={model.id}>{model.label} · {model.model}</option>)}</select><span>{models.find(m => m.id === modelId)?.external ? 'External provider · charges may apply' : 'Local inference · no API charge'}</span></div>
         {error && <div className="global-error" role="alert">{error}<button type="button" onClick={() => setError('')}>Dismiss</button></div>}
         {loading ? <div className="loading-page"><span className="spinner" />Loading workspace…</div> : (
           <>
@@ -322,7 +337,7 @@ function App() {
             {view === 'jobs' && <JobsView jobs={jobs} onOpen={openJob} onDelete={removeJob} />}
             {view === 'cases' && <CasesView cases={cases} busy={busy} onRun={runCase} />}
             {view === 'exports' && <ExportsView jobs={jobs} />}
-            {view === 'configuration' && <ConfigurationView jobs={jobs} />}
+            {view === 'configuration' && <ConfigurationView jobs={jobs} models={models} />}
           </>
         )}
       </div>
@@ -331,4 +346,4 @@ function App() {
   )
 }
 
-export default App
+export default function AuthenticatedApp() { return <AuthGate><App /></AuthGate> }

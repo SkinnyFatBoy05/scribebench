@@ -9,7 +9,8 @@ class Metrics:
         self._lock = threading.Lock()
         self.jobs = Counter()
         self.requests = Counter()
-        self.latency_ms: list[float] = []
+        self.latency_count = 0
+        self.latency_sum = 0.0
         self.input_tokens = 0
         self.output_tokens = 0
 
@@ -18,12 +19,28 @@ class Metrics:
     ) -> None:
         with self._lock:
             self.jobs[status] += 1
-            self.latency_ms.append(latency_ms)
+            self.latency_count += 1
+            self.latency_sum += latency_ms
             self.input_tokens += input_tokens
             self.output_tokens += output_tokens
 
     def record_request(self, method: str, path: str, status: int) -> None:
         normalised = path if not path.startswith("/api/jobs/") else "/api/jobs/{id}"
+        if normalised not in {
+            "/api/jobs",
+            "/api/jobs/{id}",
+            "/api/cases",
+            "/api/health",
+            "/api/ready",
+            "/api/models",
+            "/metrics",
+            "/api/auth/session",
+            "/api/auth/login",
+            "/api/auth/logout",
+        }:
+            normalised = "other"
+        if method not in {"GET", "POST", "PATCH", "DELETE", "OPTIONS", "HEAD"}:
+            method = "OTHER"
         with self._lock:
             self.requests[(method, normalised, status)] += 1
 
@@ -46,8 +63,8 @@ class Metrics:
                     f'scribebench_tokens_total{{direction="output"}} {self.output_tokens}',
                     "# HELP scribebench_job_latency_ms Job generation latency in milliseconds.",
                     "# TYPE scribebench_job_latency_ms summary",
-                    f"scribebench_job_latency_ms_count {len(self.latency_ms)}",
-                    f"scribebench_job_latency_ms_sum {sum(self.latency_ms):.3f}",
+                    f"scribebench_job_latency_ms_count {self.latency_count}",
+                    f"scribebench_job_latency_ms_sum {self.latency_sum:.3f}",
                     "# HELP scribebench_http_requests_total HTTP requests by route and status.",
                     "# TYPE scribebench_http_requests_total counter",
                 ]

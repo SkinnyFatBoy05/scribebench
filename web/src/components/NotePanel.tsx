@@ -97,6 +97,11 @@ export function NotePanel({ draft, disabled, onChange, onFocusLine }: Props) {
         onChange={(section) => update('observations', section)}
         onFocusLine={onFocusLine}
       />
+      <div className="note-section">
+        <label htmlFor="review-warnings">Review warnings (one per line)</label>
+        <textarea id="review-warnings" rows={3} disabled={disabled} value={draft.warnings.join('\n')}
+          onChange={event => onChange({ ...draft, warnings: event.target.value.split('\n').slice(0, 20) })} />
+      </div>
       {!!draft.missing_information.length && (
         <section className="missing-block" aria-labelledby="missing-title">
           <h3 id="missing-title"><AlertIcon />Missing information</h3>

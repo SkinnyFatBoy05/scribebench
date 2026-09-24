@@ -36,5 +36,4 @@ The runner re-queues `queued`, `running`, and `retrying` rows at startup. Submit
 
 ## Secrets and access
 
-Inject `SCRIBE_API_KEY` through the deployment secret store; never bake it into images or commit `.env`. Rotate by deploying the new value to API and web together. Use TLS at the ingress. Real user access requires per-user authentication and authorisation before any non-portfolio use.
-
+Inject `SCRIBE_API_KEY` into the API through the deployment secret store; never bake it into images or commit `.env`. Rotate by restarting the API with the new key (all browser sessions are revoked). The web proxy must NOT inject a service key. Set `SCRIBE_ENV=production` and use TLS at the ingress for secure cookies. Shared-workspace sign-in is implemented; per-user authentication and authorisation remain required before multi-user clinical use. See [deployment details](models.md).

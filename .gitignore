@@ -1,4 +1,7 @@
 .env
+.env.*
+!.env.example
+models.local.json
 *.log
 .venv/
 __pycache__/
